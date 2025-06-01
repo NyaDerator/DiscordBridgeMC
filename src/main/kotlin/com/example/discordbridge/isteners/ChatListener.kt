@@ -7,12 +7,13 @@ import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.PlayerDeathEvent
+import org.bukkit.event.player.PlayerAdvancementDoneEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
-import org.bukkit.event.player.PlayerAdvancementDoneEvent
 
-class ChatListener(private val plugin: DiscordBridgePlugin) : Listener {
-
+class ChatListener(
+    private val plugin: DiscordBridgePlugin,
+) : Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     fun onPlayerChat(event: AsyncChatEvent) {
         if (!plugin.isPluginEnabled()) return
@@ -42,9 +43,10 @@ class ChatListener(private val plugin: DiscordBridgePlugin) : Listener {
         if (!plugin.isPluginEnabled()) return
 
         val player = event.entity
-        val deathMessage = event.deathMessage()?.let {
-            PlainTextComponentSerializer.plainText().serialize(it)
-        } ?: "${player.name} died"
+        val deathMessage =
+            event.deathMessage()?.let {
+                PlainTextComponentSerializer.plainText().serialize(it)
+            } ?: "${player.name} died"
 
         plugin.discordBot.sendPlayerDeath(player.name, deathMessage)
     }

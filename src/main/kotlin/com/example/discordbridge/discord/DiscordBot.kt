@@ -7,20 +7,17 @@ import net.dv8tion.jda.api.entities.Guild
 import net.dv8tion.jda.api.entities.Member
 import net.dv8tion.jda.api.entities.Role
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel
-import net.dv8tion.jda.api.events.message.MessageReceivedEvent
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent
 import net.dv8tion.jda.api.events.session.ReadyEvent
 import net.dv8tion.jda.api.hooks.ListenerAdapter
+import net.dv8tion.jda.api.interactions.commands.OptionType
+import net.dv8tion.jda.api.interactions.commands.build.Commands
 import net.dv8tion.jda.api.requests.GatewayIntent
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.event.ClickEvent
-import net.kyori.adventure.text.event.HoverEvent
-import net.kyori.adventure.text.format.TextColor
-import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
-import net.dv8tion.jda.api.entities.emoji.Emoji
 
-class DiscordBot(private val plugin: DiscordBridgePlugin) : ListenerAdapter() {
-
+class DiscordBot(
+    private val plugin: DiscordBridgePlugin,
+) : ListenerAdapter() {
     private var jda: JDA? = null
     private var guild: Guild? = null
     private var channel: TextChannel? = null
@@ -35,10 +32,12 @@ class DiscordBot(private val plugin: DiscordBridgePlugin) : ListenerAdapter() {
         }
 
         return try {
-            jda = JDABuilder.createDefault(config.botToken)
-                .enableIntents(GatewayIntent.MESSAGE_CONTENT, GatewayIntent.GUILD_MESSAGES)
-                .addEventListeners(this)
-                .build()
+            jda =
+                JDABuilder
+                    .createDefault(config.botToken)
+                    .enableIntents(GatewayIntent.GUILD_MESSAGES, GatewayIntent.MESSAGE_CONTENT)
+                    .addEventListeners(this)
+                    .build()
 
             jda?.awaitReady()
             true
@@ -50,174 +49,126 @@ class DiscordBot(private val plugin: DiscordBridgePlugin) : ListenerAdapter() {
 
     override fun onReady(event: ReadyEvent) {
         plugin.logger.info("Discord bot connected as: ${event.jda.selfUser.name}")
-
         val config = plugin.configManager
 
         guild = event.jda.getGuildById(config.guildId)
-        if (guild == null) {
-            plugin.logger.severe("Could not find guild with ID: ${config.guildId}")
-            return
-        }
-
         channel = guild?.getTextChannelById(config.channelId)
-        if (channel == null) {
-            plugin.logger.severe("Could not find channel with ID: ${config.channelId}")
+        allowedRole = guild?.getRoleById(config.allowedRoleId)
+
+        if (guild == null || channel == null || allowedRole == null) {
+            plugin.logger.severe("Failed to fetch guild/channel/role. Check IDs in config.yml")
             return
         }
 
-        allowedRole = guild?.getRoleById(config.allowedRoleId)
-        if (allowedRole == null) {
-            plugin.logger.severe("Could not find role with ID: ${config.allowedRoleId}")
-            return
-        }
+        guild!!
+            .updateCommands()
+            .addCommands(
+                Commands.slash("list", "Показать список онлайн-игроков"),
+                Commands
+                    .slash("execute", "Выполнить команду от имени консоли")
+                    .addOption(OptionType.STRING, "command", "Команда", true)
+                    .addOption(OptionType.STRING, "player", "Имя игрока (опционально)", false),
+            ).queue {
+                plugin.logger.info("Slash-команды успешно зарегистрированы.")
+            }
 
         plugin.logger.info("Discord bot fully initialized!")
     }
 
-    override fun onMessageReceived(event: MessageReceivedEvent) {
-        if (event.author.isBot) return
-
-        if (event.channel.id != plugin.configManager.channelId) return
-
+    override fun onSlashCommandInteraction(event: SlashCommandInteractionEvent) {
         val member = event.member ?: return
-        if (!hasRequiredRole(member)) return
-
-        val config = plugin.configManager
-        val message = event.message.contentRaw
-
-        if (message.startsWith(config.commandPrefix)) {
-            handleCommand(event, message.substring(config.commandPrefix.length))
+        if (!hasRequiredRole(member)) {
+            event.reply("❌ У вас нет прав на использование этой команды.").setEphemeral(true).queue()
             return
         }
 
-        if (config.enableChatSync) {
-            handleChatMessage(event)
+        when (event.name) {
+            "list" -> handleListCommand(event)
+            "execute" -> handleExecuteCommand(event)
         }
     }
 
-    private fun hasRequiredRole(member: Member): Boolean {
-        return member.roles.any { it.id == plugin.configManager.allowedRoleId }
+    private fun hasRequiredRole(member: Member): Boolean = member.roles.any { it.id == plugin.configManager.allowedRoleId }
+
+    private fun handleListCommand(event: SlashCommandInteractionEvent) {
+        val onlinePlayers = Bukkit.getOnlinePlayers()
+        val playerList =
+            if (onlinePlayers.isEmpty()) {
+                "Нет игроков онлайн"
+            } else {
+                "Игроки онлайн (${onlinePlayers.size}): ${onlinePlayers.joinToString(", ") { it.name }}"
+            }
+
+        event.reply("📋 `$playerList`").queue()
     }
 
-    private fun handleCommand(event: MessageReceivedEvent, command: String) {
-        val args = command.split(" ")
-        val cmd = args[0].lowercase()
+    private fun handleExecuteCommand(event: SlashCommandInteractionEvent) {
+        val command = event.getOption("command")?.asString ?: return
+        val playerName = event.getOption("player")?.asString
 
-        when (cmd) {
-            "list" -> {
-                val onlinePlayers = Bukkit.getOnlinePlayers()
-                val playerList = if (onlinePlayers.isEmpty()) {
-                    "Нет игроков онлайн"
-                } else {
-                    "Игроки онлайн (${onlinePlayers.size}): ${onlinePlayers.joinToString(", ") { it.name }}"
-                }
-                event.channel.sendMessage("📋 **$playerList**").queue()
-            }
-
-            "say" -> {
-                if (args.size < 2) {
-                    event.channel.sendMessage("❌ Использование: `${plugin.configManager.commandPrefix}say <сообщение>`").queue()
-                    return
-                }
-
-                val messageToSay = args.drop(1).joinToString(" ")
-                val component = Component.text("[DISCORD] ")
-                    .color(TextColor.color(0x5865F2))
-                    .append(Component.text(event.author.name)
-                        .color(TextColor.color(0xFFFFFF))
-                        .decorate(TextDecoration.BOLD))
-                    .append(Component.text(": $messageToSay")
-                        .color(TextColor.color(0xFFFFFF)))
-
-                Bukkit.getScheduler().runTask(plugin, Runnable {
-                    plugin.broadcastToMinecraft(component)
-                })
-
-                event.message.addReaction(Emoji.fromUnicode("✅")).queue()
-            }
-
-            "execute", "exec" -> {
-                if (args.size < 2) {
-                    event.channel.sendMessage("❌ Использование: `${plugin.configManager.commandPrefix}execute <команда>`").queue()
-                    return
-                }
-
-                val commandToExecute = args.drop(1).joinToString(" ")
-
-                Bukkit.getScheduler().runTask(plugin, Runnable {
-                    try {
-                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), commandToExecute)
-                        event.channel.sendMessage("✅ Команда выполнена: `$commandToExecute`").queue()
-                    } catch (e: Exception) {
-                        event.channel.sendMessage("❌ Ошибка выполнения команды: ${e.message}").queue()
+        Bukkit.getScheduler().runTask(
+            plugin,
+            Runnable {
+                try {
+                    if (playerName == null) {
+                            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command)
+                            plugin.logger.info(command)
+                    } else {
+                        val player = Bukkit.getPlayerExact(playerName)
+                        if (player != null && player.isOnline) {
+                            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "execute as $playerName at @s run $command")
+                            plugin.logger.info("execute as $playerName at @s run $command")
+                        } else {
+                            event.reply("❌ Игрок `$playerName` не найден или не в сети.").queue()
+                            return@Runnable
+                        }
                     }
-                })
-            }
 
-            else -> {
-                event.channel.sendMessage("❓ Неизвестная команда. Доступные команды: `list`, `say`, `execute`").queue()
-            }
-        }
+                    event.reply("✅ Команда выполнена: `$command`").queue()
+                } catch (e: Exception) {
+                    event.reply("❌ Ошибка выполнения команды: ${e.message}").queue()
+                }
+            },
+        )
     }
 
-    private fun handleChatMessage(event: MessageReceivedEvent) {
-        val author = event.author
-        val message = event.message.contentRaw
-        val userColor = plugin.configManager.getUserColor(author.id)
-
-        val component = Component.text("[DISCORD] ")
-            .color(TextColor.color(0x5865F2))
-            .append(Component.text(author.name)
-                .color(TextColor.fromHexString(userColor))
-                .decorate(TextDecoration.BOLD)
-                .hoverEvent(HoverEvent.showText(Component.text("Discord пользователь: ${author.name}\nID: ${author.id}")))
-                .clickEvent(ClickEvent.suggestCommand("/msg ${author.name} ")))
-            .append(Component.text(": $message")
-                .color(TextColor.color(0xFFFFFF)))
-
-        Bukkit.getScheduler().runTask(plugin, Runnable {
-            plugin.broadcastToMinecraft(component)
-        })
-    }
-
-    fun sendChatMessage(playerName: String, message: String) {
+    fun sendChatMessage(
+        playerName: String,
+        message: String,
+    ) {
         if (!plugin.configManager.enableChatSync) return
-
         channel?.sendMessage("**$playerName**: $message")?.queue()
     }
 
     fun sendServerMessage(message: String) {
         if (!plugin.configManager.enableServerMessages) return
-
         channel?.sendMessage(message)?.queue()
     }
 
     fun sendPlayerJoin(playerName: String) {
         val message = plugin.configManager.getMessage("join").replace("{player}", playerName)
-        if (message.isNotEmpty()) {
-            sendServerMessage(message)
-        }
+        if (message.isNotEmpty()) sendServerMessage(message)
     }
 
     fun sendPlayerLeave(playerName: String) {
         val message = plugin.configManager.getMessage("leave").replace("{player}", playerName)
-        if (message.isNotEmpty()) {
-            sendServerMessage(message)
-        }
+        if (message.isNotEmpty()) sendServerMessage(message)
     }
 
-    fun sendPlayerDeath(playerName: String, deathMessage: String) {
-        val message = plugin.configManager.getMessage("death")
-            .replace("{player}", playerName)
-            .replace("{message}", deathMessage)
-        if (message.isNotEmpty()) {
-            sendServerMessage(message)
-        }
+    fun sendPlayerDeath(
+        playerName: String,
+        deathMessage: String,
+    ) {
+        val message =
+            plugin.configManager
+                .getMessage("death")
+                .replace("{player}", playerName)
+                .replace("{message}", deathMessage)
+        if (message.isNotEmpty()) sendServerMessage(message)
     }
 
     fun updateSettings() {
         val config = plugin.configManager
-
         guild = jda?.getGuildById(config.guildId)
         channel = guild?.getTextChannelById(config.channelId)
         allowedRole = guild?.getRoleById(config.allowedRoleId)
@@ -227,7 +178,5 @@ class DiscordBot(private val plugin: DiscordBridgePlugin) : ListenerAdapter() {
         jda?.shutdown()
     }
 
-    fun isConnected(): Boolean {
-        return jda?.status == JDA.Status.CONNECTED
-    }
+    fun isConnected(): Boolean = jda?.status == JDA.Status.CONNECTED
 }

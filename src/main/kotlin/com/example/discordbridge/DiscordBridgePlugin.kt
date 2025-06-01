@@ -5,12 +5,10 @@ import com.example.discordbridge.config.ConfigManager
 import com.example.discordbridge.discord.DiscordBot
 import com.example.discordbridge.listeners.ChatListener
 import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.plugin.java.JavaPlugin
 import java.util.logging.Level
 
 class DiscordBridgePlugin : JavaPlugin() {
-
     lateinit var configManager: ConfigManager
         private set
 
@@ -40,7 +38,6 @@ class DiscordBridgePlugin : JavaPlugin() {
             } else {
                 logger.severe("Failed to start Discord bot! Check your configuration.")
             }
-
         } catch (e: Exception) {
             logger.log(Level.SEVERE, "Failed to enable DiscordBridgeMC", e)
             server.pluginManager.disablePlugin(this)
@@ -59,8 +56,8 @@ class DiscordBridgePlugin : JavaPlugin() {
         logger.info("DiscordBridgeMC disabled.")
     }
 
-    fun reload(): Boolean {
-        return try {
+    fun reload(): Boolean =
+        try {
             configManager.loadConfigs()
             discordBot.updateSettings()
             true
@@ -68,7 +65,6 @@ class DiscordBridgePlugin : JavaPlugin() {
             logger.log(Level.SEVERE, "Failed to reload configuration", e)
             false
         }
-    }
 
     fun broadcastToMinecraft(message: Component) {
         server.broadcast(message)

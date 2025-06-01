@@ -4,10 +4,10 @@ import org.bukkit.plugin.Plugin
 import org.spongepowered.configurate.ConfigurationNode
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader
 import java.io.File
-import java.nio.file.Path
 
-class ConfigManager(private val plugin: Plugin) {
-
+class ConfigManager(
+    private val plugin: Plugin,
+) {
     private lateinit var mainConfig: ConfigurationNode
     private lateinit var colorsConfig: ConfigurationNode
 
@@ -27,11 +27,27 @@ class ConfigManager(private val plugin: Plugin) {
         private set
 
     private val userColors = mutableMapOf<String, String>()
-    private val availableColors = listOf(
-        "#FF5555", "#55FF55", "#5555FF", "#FFFF55", "#FF55FF", "#55FFFF",
-        "#FFA500", "#800080", "#008000", "#000080", "#800000", "#808000",
-        "#008080", "#C0C0C0", "#FF1493", "#00CED1", "#32CD32", "#FFD700"
-    )
+    private val availableColors =
+        listOf(
+            "#FF5555",
+            "#55FF55",
+            "#5555FF",
+            "#FFFF55",
+            "#FF55FF",
+            "#55FFFF",
+            "#FFA500",
+            "#800080",
+            "#008000",
+            "#000080",
+            "#800000",
+            "#808000",
+            "#008080",
+            "#C0C0C0",
+            "#FF1493",
+            "#00CED1",
+            "#32CD32",
+            "#FFD700",
+        )
     private var colorIndex = 0
 
     fun loadConfigs() {
@@ -47,9 +63,11 @@ class ConfigManager(private val plugin: Plugin) {
             createDefaultConfig(configFile)
         }
 
-        val loader = YamlConfigurationLoader.builder()
-            .path(configFile.toPath())
-            .build()
+        val loader =
+            YamlConfigurationLoader
+                .builder()
+                .path(configFile.toPath())
+                .build()
 
         mainConfig = loader.load()
 
@@ -69,9 +87,11 @@ class ConfigManager(private val plugin: Plugin) {
             createDefaultColorsConfig(colorsFile)
         }
 
-        val loader = YamlConfigurationLoader.builder()
-            .path(colorsFile.toPath())
-            .build()
+        val loader =
+            YamlConfigurationLoader
+                .builder()
+                .path(colorsFile.toPath())
+                .build()
 
         colorsConfig = loader.load()
 
@@ -84,9 +104,11 @@ class ConfigManager(private val plugin: Plugin) {
     }
 
     private fun createDefaultConfig(file: File) {
-        val loader = YamlConfigurationLoader.builder()
-            .path(file.toPath())
-            .build()
+        val loader =
+            YamlConfigurationLoader
+                .builder()
+                .path(file.toPath())
+                .build()
 
         val root = loader.createNode()
 
@@ -107,9 +129,11 @@ class ConfigManager(private val plugin: Plugin) {
     }
 
     private fun createDefaultColorsConfig(file: File) {
-        val loader = YamlConfigurationLoader.builder()
-            .path(file.toPath())
-            .build()
+        val loader =
+            YamlConfigurationLoader
+                .builder()
+                .path(file.toPath())
+                .build()
 
         val root = loader.createNode()
         root.node("user-colors").set(mapOf<String, String>())
@@ -117,21 +141,25 @@ class ConfigManager(private val plugin: Plugin) {
         loader.save(root)
     }
 
-    fun getUserColor(userId: String): String {
-        return userColors.getOrPut(userId) {
+    fun getUserColor(userId: String): String =
+        userColors.getOrPut(userId) {
             val color = availableColors[colorIndex % availableColors.size]
             colorIndex++
             saveUserColor(userId, color)
             color
         }
-    }
 
-    private fun saveUserColor(userId: String, color: String) {
+    private fun saveUserColor(
+        userId: String,
+        color: String,
+    ) {
         try {
             val colorsFile = File(plugin.dataFolder, "colors.yml")
-            val loader = YamlConfigurationLoader.builder()
-                .path(colorsFile.toPath())
-                .build()
+            val loader =
+                YamlConfigurationLoader
+                    .builder()
+                    .path(colorsFile.toPath())
+                    .build()
 
             val root = loader.load()
             root.node("user-colors", userId).set(color)
@@ -141,14 +169,11 @@ class ConfigManager(private val plugin: Plugin) {
         }
     }
 
-    fun getMessage(key: String): String {
-        return mainConfig.node("messages", key).getString("") ?: ""
-    }
+    fun getMessage(key: String): String = mainConfig.node("messages", key).getString("") ?: ""
 
-    fun isValidConfiguration(): Boolean {
-        return botToken.isNotEmpty() &&
-                guildId.isNotEmpty() &&
-                channelId.isNotEmpty() &&
-                allowedRoleId.isNotEmpty()
-    }
+    fun isValidConfiguration(): Boolean =
+        botToken.isNotEmpty() &&
+            guildId.isNotEmpty() &&
+            channelId.isNotEmpty() &&
+            allowedRoleId.isNotEmpty()
 }
