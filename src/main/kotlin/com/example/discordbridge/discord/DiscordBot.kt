@@ -151,8 +151,8 @@ class DiscordBot(
     private fun handleChatMessage(event: MessageReceivedEvent) {
         val author = event.author
         val message = event.message.contentRaw
-        val userColor = plugin.configManager.getUserColor(author.id)
         val config = plugin.configManager
+        val userColor = config.getUserColor(author.id)
 
         val component = Component.text("[DISCORD] ")
             .color(TextColor.color(0x5865F2))

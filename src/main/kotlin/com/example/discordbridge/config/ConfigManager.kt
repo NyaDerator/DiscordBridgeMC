@@ -27,6 +27,9 @@ class ConfigManager(
     var enableServerMessages: Boolean = true
         private set
 
+    var twitchChannel: String = ""
+        private set
+
     var wordBlacklist: List<String> = emptyList()
         private set
     var commandWhitelist: List<String> = emptyList()
@@ -38,7 +41,7 @@ class ConfigManager(
         private set
     var globalExecuteCommandCooldown: Long = 10000
         private set
-
+        
     private val userColors = mutableMapOf<String, String>()
     private val availableColors = listOf(
         "#FF5555",
@@ -81,10 +84,11 @@ class ConfigManager(
 
         botToken = mainConfig.node("discord", "bot-token").getString("")!!
         guildId = mainConfig.node("discord", "guild-id").getString("")!!
-        channelId = mainConfig.node("discord", "channel-id").getString("")!!
-        allowedRoleId = mainConfig.node("discord", "allowed-role-id").getString("")!!
+        channelId = mainConfig.node("discord", "channel-id").getString("")
+        allowedRoleId = mainConfig.node("discord", "allowed-role-id").getString("")
         enableChatSync = mainConfig.node("features", "chat-sync").getBoolean(true)
         enableServerMessages = mainConfig.node("features", "server-messages").getBoolean(true)
+        twitchChannel = mainConfig.node("features", "twitch-channel").getString("")
 
         wordBlacklist = mainConfig.node("filters", "word_blacklist").getList(String::class.java, emptyList())
         commandWhitelist = mainConfig.node("filters", "command_whitelist").getList(String::class.java, emptyList())
@@ -132,10 +136,7 @@ class ConfigManager(
 
         root.node("features", "chat-sync").set(true)
         root.node("features", "server-messages").set(true)
-
-        root.node("messages", "join").set("**{player}** присоединился к серверу")
-        root.node("messages", "leave").set("**{player}** покинул сервер")
-        root.node("messages", "death").set("💀 **{player}** {message}")
+        root.node("features", "twitch-channel").set("YOUR_TWITCH_CHANNEL_URL_HERE")
 
         loader.save(root)
     }
@@ -179,25 +180,28 @@ class ConfigManager(
     fun getMessage(key: String): String = mainConfig.node("messages", key).getString("") ?: ""
 
     fun isCommandAllowed(command: String): Boolean {
-        val whitelistEmpty = commandWhitelist.isEmpty()
-        val blacklistEmpty = commandBlacklist.isEmpty()
+        val commandWords = command.split(Regex("\\s+")).map { it.lowercase() }
 
-        val commandWords = command.split(Regex("\\s+"))
+        val whitelist = commandWhitelist.map { it.lowercase() }
+        val blacklist = commandBlacklist.map { it.lowercase() }
+
+        val whitelistEmpty = whitelist.isEmpty()
+        val blacklistEmpty = blacklist.isEmpty()
 
         return when {
             whitelistEmpty && blacklistEmpty -> true
 
             whitelistEmpty && !blacklistEmpty -> {
-                commandWords.none { commandBlacklist.contains(it) }
+                commandWords.none { it in blacklist }
             }
 
             !whitelistEmpty && blacklistEmpty -> {
-                commandWhitelist.contains(command)
+                commandWords.any { it in whitelist }
             }
 
             else -> {
-                commandWhitelist.contains(command) &&
-                commandWords.none { commandBlacklist.contains(it) }
+                commandWords.any { it in whitelist } &&
+                commandWords.none { it in blacklist }
             }
         }
     }

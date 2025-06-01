@@ -91,4 +91,16 @@ class CooldownManager(private val plugin: Plugin) {
     fun setGlobalCooldown(durationMillis: Long) {
         globalCooldownEnd = System.currentTimeMillis() + durationMillis
     }
+
+
+
+    fun resetCooldown(player: Player) {
+        cooldowns.remove(player.uniqueId)
+        bossBars[player.uniqueId]?.removeAll()
+        bossBars.remove(player.uniqueId)
+    }
+
+    fun resetGlobalCooldown() {
+        globalCooldownEnd = 0L
+    }
 }

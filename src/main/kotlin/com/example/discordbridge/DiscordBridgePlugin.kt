@@ -5,6 +5,7 @@ import com.example.discordbridge.commands.CooldownManager
 import com.example.discordbridge.config.ConfigManager
 import com.example.discordbridge.discord.DiscordBot
 import com.example.discordbridge.listeners.ChatListener
+import com.example.discordbridge.twitch.TwitchBridge
 import net.kyori.adventure.text.Component
 import org.bukkit.plugin.java.JavaPlugin
 import java.util.logging.Level
@@ -19,6 +20,9 @@ class DiscordBridgePlugin : JavaPlugin() {
     lateinit var cooldownManager: CooldownManager
         private set
 
+    lateinit var twitchBridge: TwitchBridge
+        private set
+
     private var isEnabled = false
 
     override fun onEnable() {
@@ -29,6 +33,19 @@ class DiscordBridgePlugin : JavaPlugin() {
             configManager.loadConfigs()
 
             discordBot = DiscordBot(this)
+            
+            val twitchChannel = configManager.twitchChannel.trim()
+            if (twitchChannel.isNotEmpty()) {
+                twitchBridge = TwitchBridge(
+                    plugin = this,
+                    channel = twitchChannel,
+                ) { user, message ->
+                    val minecraftMessage = Component.text("<$user> $message")
+                    broadcastToMinecraft(minecraftMessage)
+                }
+                twitchBridge.start()
+            }
+
 
             cooldownManager = CooldownManager(this)
             server.pluginManager.registerEvents(ChatListener(this), this)
