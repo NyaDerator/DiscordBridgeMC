@@ -193,6 +193,18 @@ class DiscordBot(
         val command = event.getOption("command")?.asString ?: return
         val playerName = event.getOption("player")?.asString
 
+        if (playerName != null && !config.isPlayerAllowed(playerName) && playerName.isNotEmpty()) {
+            val embed = EmbedBuilder()
+                .setTitle("❌ У нас нет доступа к данному игроку")
+                .setDescription("Команды от имени `$playerName` не разрешены к выполнению")
+                .setColor(ERROR_COLOR)
+                .setTimestamp(Instant.now())
+                .build()
+            
+            event.replyEmbeds(embed).queue()
+            return
+        }
+
         if (!config.isCommandAllowed(command)) {
             val embed = EmbedBuilder()
                 .setTitle("❌ Команда запрещена")
@@ -205,9 +217,53 @@ class DiscordBot(
             return
         }
 
+        val cooldownManager = plugin.cooldownManager
+
         Bukkit.getScheduler().runTask(plugin, Runnable {
             try {
-                val cooldownManager = plugin.cooldownManager
+                if (playerName != null) {
+                    val player = Bukkit.getPlayerExact(playerName)
+                    if (player == null || !player.isOnline) {
+                        val embed = EmbedBuilder()
+                            .setTitle("❌ Игрок не найден")
+                            .setDescription("Игрок `$playerName` не найден или не в сети")
+                            .setColor(ERROR_COLOR)
+                            .setTimestamp(Instant.now())
+                            .build()
+                        
+                        event.replyEmbeds(embed).queue()
+                        return@Runnable
+                    }
+
+                    if (cooldownManager.isOnCooldown(player)) {
+                        val seconds = cooldownManager.getRemaining(player) / 1000.0
+                        val embed = EmbedBuilder()
+                            .setTitle("⏳ Кулдаун активен")
+                            .setDescription("Игрок `$playerName` на кулдауне")
+                            .setColor(WARNING_COLOR)
+                            .setTimestamp(Instant.now())
+                            .addField("Осталось времени", "%.1f сек".format(seconds), true)
+                            .build()
+                        
+                        event.replyEmbeds(embed).queue()
+                        return@Runnable
+                    }
+                } else {
+                    if (cooldownManager.isGlobalCooldown()) {
+                        val seconds = cooldownManager.getGlobalRemaining() / 1000.0
+                        val embed = EmbedBuilder()
+                            .setTitle("⏳ Глобальный кулдаун")
+                            .setDescription("Глобальный откат активен")
+                            .setColor(WARNING_COLOR)
+                            .setTimestamp(Instant.now())
+                            .addField("Попробуйте через", "%.1f сек".format(seconds), true)
+                            .build()
+                        
+                        event.replyEmbeds(embed).queue()
+                        return@Runnable
+                    }
+                }
+
                 val finalCommand = if (playerName == null) command else "execute as $playerName at @s run $command"
 
                 val interceptor = CommandLogInterceptor { logOutput ->
@@ -225,72 +281,31 @@ class DiscordBot(
 
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommand)
 
+                if (playerName != null) {
+                    val player = Bukkit.getPlayerExact(playerName)!!
+                    cooldownManager.setCooldown(player, config.executeCommandCooldown)
+                } else {
+                    cooldownManager.setGlobalCooldown(config.globalExecuteCommandCooldown)
+                }
+
+                plugin.logger.info("Executed command: $finalCommand")
+                
+                val successEmbed = EmbedBuilder()
+                    .setTitle("✅ Команда выполнена")
+                    .setDescription("Команда успешно выполнена")
+                    .setColor(SUCCESS_COLOR)
+                    .setTimestamp(Instant.now())
+                    .addField("Команда", "`$command`", true)
+                    .addField("Исполнитель", event.user.name, true)
+                    .addField("Цель", playerName ?: "Консоль", true)
+                    .build()
+                
+                event.replyEmbeds(successEmbed).queue()
+                
                 Bukkit.getScheduler().runTaskLater(plugin, Runnable {
                     interceptor.stop()
-
-                    if (event.isAcknowledged) return@Runnable
-
-                    if (playerName != null) {
-                        val player = Bukkit.getPlayerExact(playerName)
-                        if (player == null || !player.isOnline) {
-                            val embed = EmbedBuilder()
-                                .setTitle("❌ Игрок не найден")
-                                .setDescription("Игрок `$playerName` не найден или не в сети")
-                                .setColor(ERROR_COLOR)
-                                .setTimestamp(Instant.now())
-                                .build()
-                            
-                            event.replyEmbeds(embed).queue()
-                            return@Runnable
-                        }
-
-                        if (cooldownManager.isOnCooldown(player)) {
-                            val seconds = cooldownManager.getRemaining(player) / 1000.0
-                            val embed = EmbedBuilder()
-                                .setTitle("⏳ Кулдаун активен")
-                                .setDescription("Игрок `$playerName` на кулдауне")
-                                .setColor(WARNING_COLOR)
-                                .setTimestamp(Instant.now())
-                                .addField("Осталось времени", "%.1f сек".format(seconds), true)
-                                .build()
-                            
-                            event.replyEmbeds(embed).queue()
-                            return@Runnable
-                        }
-
-                        cooldownManager.setCooldown(player, config.executeCommandCooldown)
-                    } else {
-                        if (cooldownManager.isGlobalCooldown()) {
-                            val seconds = cooldownManager.getGlobalRemaining() / 1000.0
-                            val embed = EmbedBuilder()
-                                .setTitle("⏳ Глобальный кулдаун")
-                                .setDescription("Глобальный откат активен")
-                                .setColor(WARNING_COLOR)
-                                .setTimestamp(Instant.now())
-                                .addField("Попробуйте через", "%.1f сек".format(seconds), true)
-                                .build()
-                            
-                            event.replyEmbeds(embed).queue()
-                            return@Runnable
-                        }
-
-                        cooldownManager.setGlobalCooldown(config.globalExecuteCommandCooldown)
-                    }
-
-                    plugin.logger.info(finalCommand)
-                    
-                    val successEmbed = EmbedBuilder()
-                        .setTitle("✅ Команда выполнена")
-                        .setDescription("Команда успешно выполнена")
-                        .setColor(SUCCESS_COLOR)
-                        .setTimestamp(Instant.now())
-                        .addField("Команда", "`$command`", true)
-                        .addField("Исполнитель", event.user.name, true)
-                        .addField("Цель", playerName ?: "Консоль", true)
-                        .build()
-                    
-                    event.replyEmbeds(successEmbed).queue()
                 }, 1L)
+
             } catch (e: Exception) {
                 val embed = EmbedBuilder()
                     .setTitle("❌ Критическая ошибка")

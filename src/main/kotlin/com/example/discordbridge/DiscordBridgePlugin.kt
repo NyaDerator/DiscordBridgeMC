@@ -74,6 +74,7 @@ class DiscordBridgePlugin : JavaPlugin() {
             discordBot.sendServerMessage("🔴 **Сервер остановлен.**")
 
             discordBot.shutdown()
+            twitchBridge.stop()
         }
 
         logger.info("DiscordBridgeMC disabled.")

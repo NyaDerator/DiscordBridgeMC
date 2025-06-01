@@ -50,14 +50,4 @@ class ChatListener(
 
         plugin.discordBot.sendPlayerDeath(player.name, deathMessage)
     }
-
-    @EventHandler
-    fun onAdvancementDone(event: PlayerAdvancementDoneEvent) {
-        val playerName = event.player.name
-        val advancement = event.advancement.key.key
-
-        val message = "🎉 Игрок **$playerName** получил достижение: `$advancement`"
-
-        plugin.discordBot.sendServerMessage(message)
-    }
 }

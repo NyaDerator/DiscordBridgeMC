@@ -40,3 +40,8 @@ filters:
   command_blacklist:
     - stop
     - reload
+
+  players_whitelist:
+    - _Nyaderator_
+
+  players_blacklist:

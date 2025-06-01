@@ -13,6 +13,7 @@ class CooldownManager(private val plugin: Plugin) {
 
     private val cooldowns = mutableMapOf<UUID, Long>()
     private val bossBars = mutableMapOf<UUID, BossBar>()
+    private val tasks = mutableMapOf<UUID, BukkitRunnable>()
 
     private var globalCooldownEnd: Long = 0L
 
@@ -35,8 +36,11 @@ class CooldownManager(private val plugin: Plugin) {
     private fun showCooldownBar(player: Player, duration: Long) {
         val uuid = player.uniqueId
 
-        // Удаляем старую полосу
         bossBars[uuid]?.removeAll()
+        bossBars.remove(uuid)
+
+        tasks[uuid]?.cancel()
+        tasks.remove(uuid)
 
         val bar = Bukkit.createBossBar("§cОткат команды...", BarColor.RED, BarStyle.SEGMENTED_10)
         bar.progress = 1.0
@@ -46,7 +50,7 @@ class CooldownManager(private val plugin: Plugin) {
         val start = System.currentTimeMillis()
         val end = start + duration
 
-        object : BukkitRunnable() {
+        val task = object : BukkitRunnable() {
             override fun run() {
                 val now = System.currentTimeMillis()
                 val progress = ((end - now).toDouble() / duration.toDouble()).coerceIn(0.0, 1.0)
@@ -55,11 +59,14 @@ class CooldownManager(private val plugin: Plugin) {
                 if (now >= end) {
                     bar.removeAll()
                     bossBars.remove(uuid)
-                    showAvailableBar(player, 60L) // 60 тиков = 3 секунды
+                    showAvailableBar(player, 60L)
+                    tasks.remove(uuid)
                     cancel()
                 }
             }
-        }.runTaskTimer(plugin, 0L, 2L)
+        }
+        task.runTaskTimer(plugin, 0L, 2L)
+        tasks[uuid] = task
     }
 
     private fun showAvailableBar(player: Player, durationTicks: Long) {
@@ -78,8 +85,6 @@ class CooldownManager(private val plugin: Plugin) {
         }.runTaskLater(plugin, durationTicks)
     }
 
-    // Глобальный кулдаун 
-
     fun isGlobalCooldown(): Boolean {
         return System.currentTimeMillis() < globalCooldownEnd
     }
@@ -92,12 +97,14 @@ class CooldownManager(private val plugin: Plugin) {
         globalCooldownEnd = System.currentTimeMillis() + durationMillis
     }
 
-
-
     fun resetCooldown(player: Player) {
-        cooldowns.remove(player.uniqueId)
-        bossBars[player.uniqueId]?.removeAll()
-        bossBars.remove(player.uniqueId)
+        val uuid = player.uniqueId
+        cooldowns.remove(uuid)
+        bossBars[uuid]?.removeAll()
+        bossBars.remove(uuid)
+
+        tasks[uuid]?.cancel()
+        tasks.remove(uuid)
     }
 
     fun resetGlobalCooldown() {

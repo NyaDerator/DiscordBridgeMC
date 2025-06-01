@@ -42,6 +42,11 @@ class ConfigManager(
     var globalExecuteCommandCooldown: Long = 10000
         private set
         
+    var playersWhitelist: List<String> = emptyList()
+        private set
+    var playersBlacklist: List<String> = emptyList()
+        private set
+
     private val userColors = mutableMapOf<String, String>()
     private val availableColors = listOf(
         "#FF5555",
@@ -93,6 +98,9 @@ class ConfigManager(
         wordBlacklist = mainConfig.node("filters", "word_blacklist").getList(String::class.java, emptyList())
         commandWhitelist = mainConfig.node("filters", "command_whitelist").getList(String::class.java, emptyList())
         commandBlacklist = mainConfig.node("filters", "command_blacklist").getList(String::class.java, emptyList())
+
+        playersWhitelist = mainConfig.node("filters", "players_whitelist").getList(String::class.java, emptyList())
+        playersBlacklist = mainConfig.node("filters", "players_blacklist").getList(String::class.java, emptyList())
     }
 
     private fun loadCooldownsConfig() {
@@ -205,6 +213,34 @@ class ConfigManager(
             }
         }
     }
+
+    fun isPlayerAllowed(command: String): Boolean {
+        val playersWords = command.split(Regex("\\s+")).map { it.lowercase() }
+
+        val whitelist = playersWhitelist.map { it.lowercase() }
+        val blacklist = playersBlacklist.map { it.lowercase() }
+
+        val whitelistEmpty = whitelist.isEmpty()
+        val blacklistEmpty = blacklist.isEmpty()
+
+        return when {
+            whitelistEmpty && blacklistEmpty -> true
+
+            whitelistEmpty && !blacklistEmpty -> {
+                playersWords.none { it in blacklist }
+            }
+
+            !whitelistEmpty && blacklistEmpty -> {
+                playersWords.any { it in whitelist }
+            }
+
+            else -> {
+                playersWords.any { it in whitelist } &&
+                playersWords.none { it in blacklist }
+            }
+        }
+    }
+
 
     fun filterChatMessage(message: String): String {
         var filtered = message
