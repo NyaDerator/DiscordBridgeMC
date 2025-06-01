@@ -1,6 +1,7 @@
 package com.example.discordbridge
 
 import com.example.discordbridge.commands.DiscordBridgeCommand
+import com.example.discordbridge.commands.CooldownManager
 import com.example.discordbridge.config.ConfigManager
 import com.example.discordbridge.discord.DiscordBot
 import com.example.discordbridge.listeners.ChatListener
@@ -15,6 +16,9 @@ class DiscordBridgePlugin : JavaPlugin() {
     lateinit var discordBot: DiscordBot
         private set
 
+    lateinit var cooldownManager: CooldownManager
+        private set
+
     private var isEnabled = false
 
     override fun onEnable() {
@@ -26,9 +30,11 @@ class DiscordBridgePlugin : JavaPlugin() {
 
             discordBot = DiscordBot(this)
 
+            cooldownManager = CooldownManager(this)
             server.pluginManager.registerEvents(ChatListener(this), this)
 
             getCommand("discordbridge")?.setExecutor(DiscordBridgeCommand(this))
+            
 
             if (discordBot.start()) {
                 isEnabled = true

@@ -1,8 +1,8 @@
-# User color mappings for Discord users in Minecraft
-# Colors are automatically assigned when users first send messages
-# Format: Discord User ID -> Hex Color Code
+# Соответствие цветов пользователей Discord в Minecraft
+# Цвета автоматически назначаются при первом сообщении пользователя
+# Формат: Discord User ID -> HEX-код цвета
 
 user-colors:
-# Example:
+# Пример:
 # "123456789012345678": "#FF5555"
 # "987654321098765432": "#55FF55"

@@ -25,6 +25,8 @@ class ConfigManager(
         private set
     var enableServerMessages: Boolean = true
         private set
+    var executeCommandCoolDown: Long = 10000
+        private set
 
     private val userColors = mutableMapOf<String, String>()
     private val availableColors =
@@ -75,9 +77,10 @@ class ConfigManager(
         guildId = mainConfig.node("discord", "guild-id").getString("")!!
         channelId = mainConfig.node("discord", "channel-id").getString("")!!
         allowedRoleId = mainConfig.node("discord", "allowed-role-id").getString("")!!
-        commandPrefix = mainConfig.node("discord", "command-prefix").getString("!")!!
         enableChatSync = mainConfig.node("features", "chat-sync").getBoolean(true)
         enableServerMessages = mainConfig.node("features", "server-messages").getBoolean(true)
+
+        executeCommandCoolDown = mainConfig.node("features", "execute-command-cooldown").getLong(10000)
     }
 
     private fun loadColorsConfig() {
@@ -116,10 +119,10 @@ class ConfigManager(
         root.node("discord", "guild-id").set("YOUR_GUILD_ID_HERE")
         root.node("discord", "channel-id").set("YOUR_CHANNEL_ID_HERE")
         root.node("discord", "allowed-role-id").set("YOUR_ROLE_ID_HERE")
-        root.node("discord", "command-prefix").set("!")
 
         root.node("features", "chat-sync").set(true)
         root.node("features", "server-messages").set(true)
+        root.node("features", "execute-command-cooldown").set(15000)
 
         root.node("messages", "join").set("**{player}** присоединился к серверу")
         root.node("messages", "leave").set("**{player}** покинул сервер")
