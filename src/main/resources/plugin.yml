@@ -1,0 +1,22 @@
+name: DiscordBridgeMC
+version: '1.0.0'
+main: com.example.discordbridge.DiscordBridgePlugin
+api-version: '1.21'
+author: YourName
+description: Discord integration plugin for Minecraft
+website: https://example.com
+
+commands:
+  discordbridge:
+    description: Main command for Discord Bridge
+    usage: /<command> [reload|status]
+    aliases: [db, discord]
+    permission: discordbridge.admin
+
+permissions:
+  discordbridge.admin:
+    description: Access to Discord Bridge admin commands
+    default: op
+  discordbridge.chat:
+    description: Allows messages to be sent to Discord
+    default: true

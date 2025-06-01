@@ -1,0 +1,35 @@
+# Discord Bot Configuration
+discord:
+  # Bot token from Discord Developer Portal
+  bot-token: ""
+
+  # Guild (Server) ID where the bot will operate
+  guild-id: ""
+
+  # Channel ID for chat synchronization
+  channel-id: ""
+
+  # Role ID that allows users to use bot commands and chat sync
+  allowed-role-id: ""
+
+  # Command prefix for Discord commands
+  command-prefix: "!"
+
+# Plugin Features
+features:
+  # Enable chat synchronization between Discord and Minecraft
+  chat-sync: true
+
+  # Enable server status messages (join/leave/death)
+  server-messages: true
+
+# Messages sent to Discord
+messages:
+  # Player join message
+  join: "**{player}** присоединился к серверу"
+
+  # Player leave message
+  leave: "**{player}** покинул сервер"
+
+  # Player death message
+  death: "💀 **{player}** {message}"
