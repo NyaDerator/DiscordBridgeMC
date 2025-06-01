@@ -6,6 +6,7 @@ import com.example.discordbridge.util.CommandLogInterceptor
 
 import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.JDABuilder
+import net.dv8tion.jda.api.EmbedBuilder
 import net.dv8tion.jda.api.entities.Guild
 import net.dv8tion.jda.api.entities.Member
 import net.dv8tion.jda.api.entities.Role
@@ -33,6 +34,9 @@ import org.apache.logging.log4j.core.LogEvent
 import org.apache.logging.log4j.core.appender.AbstractAppender
 import org.apache.logging.log4j.core.layout.PatternLayout
 
+import java.awt.Color
+import java.time.Instant
+
 class DiscordBot(
     private val plugin: DiscordBridgePlugin,
 ) : ListenerAdapter() {
@@ -40,6 +44,15 @@ class DiscordBot(
     private var guild: Guild? = null
     private var channel: TextChannel? = null
     private var allowedRole: Role? = null
+
+    companion object {
+        val SUCCESS_COLOR = Color(0x00FF00)
+        val ERROR_COLOR = Color(0xFF0000)
+        val INFO_COLOR = Color(0x5865F2)
+        val WARNING_COLOR = Color(0xFFAA00)
+        val CHAT_COLOR = Color(0x7289DA)
+        val SERVER_COLOR = Color(0x99AAB5)
+    }
 
     fun start(): Boolean {
         val config = plugin.configManager
@@ -96,7 +109,14 @@ class DiscordBot(
     override fun onSlashCommandInteraction(event: SlashCommandInteractionEvent) {
         val member = event.member ?: return
         if (!hasRequiredRole(member)) {
-            event.reply("❌ У вас нет прав на использование этой команды.").setEphemeral(true).queue()
+            val embed = EmbedBuilder()
+                .setTitle("❌ Доступ запрещён")
+                .setDescription("У вас нет прав на использование этой команды.")
+                .setColor(ERROR_COLOR)
+                .setTimestamp(Instant.now())
+                .build()
+            
+            event.replyEmbeds(embed).setEphemeral(true).queue()
             return
         }
 
@@ -109,26 +129,31 @@ class DiscordBot(
     override fun onMessageReceived(event: MessageReceivedEvent) {
         if (event.author.isBot) return
 
-        if (event.channel.id != plugin.configManager.channelId) return
+        val config = plugin.configManager
+
+        if (config.channelId.isEmpty()) return
+        if (event.channel.id != config.channelId) return
 
         val member = event.member ?: return
         if (!hasRequiredRole(member)) return
-
-        val config = plugin.configManager
-        val message = event.message.contentRaw
 
         if (config.enableChatSync) {
             handleChatMessage(event)
         }
     }
 
-    private fun hasRequiredRole(member: Member): Boolean = member.roles.any { it.id == plugin.configManager.allowedRoleId }
+    private fun hasRequiredRole(member: Member): Boolean {
+        val allowedRoleId = plugin.configManager.allowedRoleId
+        if (allowedRoleId.isEmpty()) return true
+        return member.roles.any { it.id == allowedRoleId }
+    }
     
     private fun handleChatMessage(event: MessageReceivedEvent) {
         val author = event.author
         val message = event.message.contentRaw
         val userColor = plugin.configManager.getUserColor(author.id)
-        
+        val config = plugin.configManager
+
         val component = Component.text("[DISCORD] ")
             .color(TextColor.color(0x5865F2))
             .append(Component.text(author.name)
@@ -136,7 +161,7 @@ class DiscordBot(
                 .decorate(TextDecoration.BOLD)
                 .hoverEvent(HoverEvent.showText(Component.text("Discord пользователь: ${author.name}\nID: ${author.id}")))
                 .clickEvent(ClickEvent.suggestCommand("/msg ${author.name} ")))
-            .append(Component.text(": $message")
+            .append(Component.text(": ${config.filterChatMessage(message)}")
                 .color(TextColor.color(0xFFFFFF)))
         
         Bukkit.getScheduler().runTask(plugin, Runnable {
@@ -144,25 +169,41 @@ class DiscordBot(
         })
     }
 
-
     private fun handleListCommand(event: SlashCommandInteractionEvent) {
         val onlinePlayers = Bukkit.getOnlinePlayers()
-        val playerList =
-            if (onlinePlayers.isEmpty()) {
-                "Нет игроков онлайн"
-            } else {
-                "Игроки онлайн (${onlinePlayers.size}): ${onlinePlayers.joinToString(", ") { it.name }}"
-            }
+        
+        val embed = EmbedBuilder()
+            .setTitle("📋 Список игроков онлайн")
+            .setColor(INFO_COLOR)
+            .setTimestamp(Instant.now())
+        
+        if (onlinePlayers.isEmpty()) {
+            embed.setDescription("🚫 Нет игроков онлайн")
+        } else {
+            val playerList = onlinePlayers.joinToString("\n") { "• ${it.name}" }
+            embed.setDescription("**Всего игроков: ${onlinePlayers.size}**\n\n$playerList")
+            embed.setFooter("Обновлено", event.jda.selfUser.avatarUrl)
+        }
 
-        event.reply("📋 `$playerList`").queue()
+        event.replyEmbeds(embed.build()).queue()
     }
-
 
     private fun handleExecuteCommand(event: SlashCommandInteractionEvent) {
         val config = plugin.configManager
-
         val command = event.getOption("command")?.asString ?: return
         val playerName = event.getOption("player")?.asString
+
+        if (!config.isCommandAllowed(command)) {
+            val embed = EmbedBuilder()
+                .setTitle("❌ Команда запрещена")
+                .setDescription("Команда `$command` не разрешена к выполнению")
+                .setColor(ERROR_COLOR)
+                .setTimestamp(Instant.now())
+                .build()
+            
+            event.replyEmbeds(embed).queue()
+            return
+        }
 
         Bukkit.getScheduler().runTask(plugin, Runnable {
             try {
@@ -170,88 +211,182 @@ class DiscordBot(
                 val finalCommand = if (playerName == null) command else "execute as $playerName at @s run $command"
 
                 val interceptor = CommandLogInterceptor { logOutput ->
-                    event.reply("❌ Ошибка при выполнении команды:\n```\n$logOutput\n```").queue()
+                    val errorEmbed = EmbedBuilder()
+                        .setTitle("❌ Ошибка выполнения команды")
+                        .setDescription("```\n$logOutput\n```")
+                        .setColor(ERROR_COLOR)
+                        .setTimestamp(Instant.now())
+                        .addField("Команда", "`$command`", true)
+                        .addField("Игрок", playerName ?: "Консоль", true)
+                        .build()
+                    
+                    event.replyEmbeds(errorEmbed).queue()
                 }
 
-                // Выполняем команду
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommand)
 
-                // Отключаем перехват через 1 тик
                 Bukkit.getScheduler().runTaskLater(plugin, Runnable {
                     interceptor.stop()
 
-                    // Если уже отправлен ответ (т.е. была ошибка), не продолжаем
                     if (event.isAcknowledged) return@Runnable
 
-                    // Назначаем кулдаун
                     if (playerName != null) {
                         val player = Bukkit.getPlayerExact(playerName)
                         if (player == null || !player.isOnline) {
-                            event.reply("❌ Игрок `$playerName` не найден или не в сети.").queue()
+                            val embed = EmbedBuilder()
+                                .setTitle("❌ Игрок не найден")
+                                .setDescription("Игрок `$playerName` не найден или не в сети")
+                                .setColor(ERROR_COLOR)
+                                .setTimestamp(Instant.now())
+                                .build()
+                            
+                            event.replyEmbeds(embed).queue()
                             return@Runnable
                         }
 
                         if (cooldownManager.isOnCooldown(player)) {
                             val seconds = cooldownManager.getRemaining(player) / 1000.0
-                            event.reply("⏳ Игрок `$playerName` на кулдауне (%.1f сек)".format(seconds)).queue()
+                            val embed = EmbedBuilder()
+                                .setTitle("⏳ Кулдаун активен")
+                                .setDescription("Игрок `$playerName` на кулдауне")
+                                .setColor(WARNING_COLOR)
+                                .setTimestamp(Instant.now())
+                                .addField("Осталось времени", "%.1f сек".format(seconds), true)
+                                .build()
+                            
+                            event.replyEmbeds(embed).queue()
                             return@Runnable
                         }
 
-                        cooldownManager.setCooldown(player, config.executeCommandCoolDown)
+                        cooldownManager.setCooldown(player, config.executeCommandCooldown)
                     } else {
                         if (cooldownManager.isGlobalCooldown()) {
                             val seconds = cooldownManager.getGlobalRemaining() / 1000.0
-                            event.reply("⏳ Глобальный откат. Попробуйте через %.1f сек".format(seconds)).queue()
+                            val embed = EmbedBuilder()
+                                .setTitle("⏳ Глобальный кулдаун")
+                                .setDescription("Глобальный откат активен")
+                                .setColor(WARNING_COLOR)
+                                .setTimestamp(Instant.now())
+                                .addField("Попробуйте через", "%.1f сек".format(seconds), true)
+                                .build()
+                            
+                            event.replyEmbeds(embed).queue()
                             return@Runnable
                         }
 
-                        cooldownManager.setGlobalCooldown(config.executeCommandCoolDown)
+                        cooldownManager.setGlobalCooldown(config.globalExecuteCommandCooldown)
                     }
 
                     plugin.logger.info(finalCommand)
-                    event.reply("✅ Команда выполнена: `$command`").queue()
+                    
+                    val successEmbed = EmbedBuilder()
+                        .setTitle("✅ Команда выполнена")
+                        .setDescription("Команда успешно выполнена")
+                        .setColor(SUCCESS_COLOR)
+                        .setTimestamp(Instant.now())
+                        .addField("Команда", "`$command`", true)
+                        .addField("Исполнитель", event.user.name, true)
+                        .addField("Цель", playerName ?: "Консоль", true)
+                        .build()
+                    
+                    event.replyEmbeds(successEmbed).queue()
                 }, 1L)
             } catch (e: Exception) {
-                event.reply("❌ Ошибка выполнения команды: ${e.message}").queue()
+                val embed = EmbedBuilder()
+                    .setTitle("❌ Критическая ошибка")
+                    .setDescription("Произошла ошибка при выполнении команды")
+                    .setColor(ERROR_COLOR)
+                    .setTimestamp(Instant.now())
+                    .addField("Ошибка", e.message ?: "Неизвестная ошибка", false)
+                    .build()
+                
+                event.replyEmbeds(embed).queue()
             }
         })
     }
 
-
-
-    fun sendChatMessage(
-        playerName: String,
-        message: String,
-    ) {
+    fun sendChatMessage(playerName: String, message: String) {
         if (!plugin.configManager.enableChatSync) return
-        channel?.sendMessage("**$playerName**: $message")?.queue()
+        
+        val embed = EmbedBuilder()
+            .setAuthor(playerName, null, "https://mc-heads.net/avatar/$playerName/32")
+            .setDescription(message)
+            .setColor(CHAT_COLOR)
+            .setTimestamp(Instant.now())
+            .setFooter("Minecraft Chat")
+            .build()
+        
+        channel?.sendMessageEmbeds(embed)?.queue()
     }
 
     fun sendServerMessage(message: String) {
         if (!plugin.configManager.enableServerMessages) return
-        channel?.sendMessage(message)?.queue()
+        
+        val embed = EmbedBuilder()
+            .setDescription(message)
+            .setColor(SERVER_COLOR)
+            .setTimestamp(Instant.now())
+            .setFooter("Server Event")
+            .build()
+        
+        channel?.sendMessageEmbeds(embed)?.queue()
     }
 
     fun sendPlayerJoin(playerName: String) {
-        val message = plugin.configManager.getMessage("join").replace("{player}", playerName)
-        if (message.isNotEmpty()) sendServerMessage(message)
+        val messageText = plugin.configManager.getMessage("join").replace("{player}", playerName)
+        if (messageText.isEmpty()) return
+        
+        val embed = EmbedBuilder()
+            .setTitle("🟢 Игрок подключился")
+            .setDescription(messageText)
+            .setColor(SUCCESS_COLOR)
+            .setTimestamp(Instant.now())
+            .setThumbnail("https://mc-heads.net/avatar/$playerName/64")
+            .addField("Игрок", playerName, true)
+            .addField("Статус", "Подключился к серверу", true)
+            .setFooter("Join Event")
+            .build()
+        
+        channel?.sendMessageEmbeds(embed)?.queue()
     }
 
     fun sendPlayerLeave(playerName: String) {
-        val message = plugin.configManager.getMessage("leave").replace("{player}", playerName)
-        if (message.isNotEmpty()) sendServerMessage(message)
+        val messageText = plugin.configManager.getMessage("leave").replace("{player}", playerName)
+        if (messageText.isEmpty()) return
+        
+        val embed = EmbedBuilder()
+            .setTitle("🔴 Игрок отключился")
+            .setDescription(messageText)
+            .setColor(ERROR_COLOR)
+            .setTimestamp(Instant.now())
+            .setThumbnail("https://mc-heads.net/avatar/$playerName/64")
+            .addField("Игрок", playerName, true)
+            .addField("Статус", "Отключился от сервера", true)
+            .setFooter("Leave Event")
+            .build()
+        
+        channel?.sendMessageEmbeds(embed)?.queue()
     }
 
-    fun sendPlayerDeath(
-        playerName: String,
-        deathMessage: String,
-    ) {
-        val message =
-            plugin.configManager
-                .getMessage("death")
-                .replace("{player}", playerName)
-                .replace("{message}", deathMessage)
-        if (message.isNotEmpty()) sendServerMessage(message)
+    fun sendPlayerDeath(playerName: String, deathMessage: String) {
+        val messageText = plugin.configManager
+            .getMessage("death")
+            .replace("{player}", playerName)
+            .replace("{message}", deathMessage)
+        if (messageText.isEmpty()) return
+        
+        val embed = EmbedBuilder()
+            .setTitle("💀 Смерть игрока")
+            .setDescription(messageText)
+            .setColor(Color(0x8B0000))
+            .setTimestamp(Instant.now())
+            .setThumbnail("https://mc-heads.net/avatar/$playerName/64")
+            .addField("Игрок", playerName, true)
+            .addField("Причина", deathMessage, false)
+            .setFooter("Death Event")
+            .build()
+        
+        channel?.sendMessageEmbeds(embed)?.queue()
     }
 
     fun updateSettings() {

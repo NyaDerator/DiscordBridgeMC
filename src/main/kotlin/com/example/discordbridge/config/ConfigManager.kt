@@ -9,6 +9,7 @@ class ConfigManager(
     private val plugin: Plugin,
 ) {
     private lateinit var mainConfig: ConfigurationNode
+    private lateinit var cooldownsConfig: ConfigurationNode
     private lateinit var colorsConfig: ConfigurationNode
 
     var botToken: String = ""
@@ -25,35 +26,45 @@ class ConfigManager(
         private set
     var enableServerMessages: Boolean = true
         private set
-    var executeCommandCoolDown: Long = 10000
+
+    var wordBlacklist: List<String> = emptyList()
+        private set
+    var commandWhitelist: List<String> = emptyList()
+        private set
+    var commandBlacklist: List<String> = emptyList()
+        private set
+
+    var executeCommandCooldown: Long = 10000
+        private set
+    var globalExecuteCommandCooldown: Long = 10000
         private set
 
     private val userColors = mutableMapOf<String, String>()
-    private val availableColors =
-        listOf(
-            "#FF5555",
-            "#55FF55",
-            "#5555FF",
-            "#FFFF55",
-            "#FF55FF",
-            "#55FFFF",
-            "#FFA500",
-            "#800080",
-            "#008000",
-            "#000080",
-            "#800000",
-            "#808000",
-            "#008080",
-            "#C0C0C0",
-            "#FF1493",
-            "#00CED1",
-            "#32CD32",
-            "#FFD700",
-        )
+    private val availableColors = listOf(
+        "#FF5555",
+        "#55FF55",
+        "#5555FF",
+        "#FFFF55",
+        "#FF55FF",
+        "#55FFFF",
+        "#FFA500",
+        "#800080",
+        "#008000",
+        "#000080",
+        "#800000",
+        "#808000",
+        "#008080",
+        "#C0C0C0",
+        "#FF1493",
+        "#00CED1",
+        "#32CD32",
+        "#FFD700",
+    )
     private var colorIndex = 0
 
     fun loadConfigs() {
         loadMainConfig()
+        loadCooldownsConfig()
         loadColorsConfig()
     }
 
@@ -65,12 +76,7 @@ class ConfigManager(
             createDefaultConfig(configFile)
         }
 
-        val loader =
-            YamlConfigurationLoader
-                .builder()
-                .path(configFile.toPath())
-                .build()
-
+        val loader = YamlConfigurationLoader.builder().path(configFile.toPath()).build()
         mainConfig = loader.load()
 
         botToken = mainConfig.node("discord", "bot-token").getString("")!!
@@ -80,7 +86,21 @@ class ConfigManager(
         enableChatSync = mainConfig.node("features", "chat-sync").getBoolean(true)
         enableServerMessages = mainConfig.node("features", "server-messages").getBoolean(true)
 
-        executeCommandCoolDown = mainConfig.node("features", "execute-command-cooldown").getLong(10000)
+        wordBlacklist = mainConfig.node("filters", "word_blacklist").getList(String::class.java, emptyList())
+        commandWhitelist = mainConfig.node("filters", "command_whitelist").getList(String::class.java, emptyList())
+        commandBlacklist = mainConfig.node("filters", "command_blacklist").getList(String::class.java, emptyList())
+    }
+
+    private fun loadCooldownsConfig() {
+        val cooldownsFile = File(plugin.dataFolder, "cooldowns.yml")
+        if (!cooldownsFile.exists()) {
+            createDefaultCooldownsConfig(cooldownsFile)
+        }
+        val loader = YamlConfigurationLoader.builder().path(cooldownsFile.toPath()).build()
+        cooldownsConfig = loader.load()
+
+        executeCommandCooldown = cooldownsConfig.node("execute-command-cooldown").getLong(15000)
+        globalExecuteCommandCooldown = cooldownsConfig.node("global-execute-command-cooldown").getLong(15000)
     }
 
     private fun loadColorsConfig() {
@@ -90,12 +110,7 @@ class ConfigManager(
             createDefaultColorsConfig(colorsFile)
         }
 
-        val loader =
-            YamlConfigurationLoader
-                .builder()
-                .path(colorsFile.toPath())
-                .build()
-
+        val loader = YamlConfigurationLoader.builder().path(colorsFile.toPath()).build()
         colorsConfig = loader.load()
 
         val colorsNode = colorsConfig.node("user-colors")
@@ -107,12 +122,7 @@ class ConfigManager(
     }
 
     private fun createDefaultConfig(file: File) {
-        val loader =
-            YamlConfigurationLoader
-                .builder()
-                .path(file.toPath())
-                .build()
-
+        val loader = YamlConfigurationLoader.builder().path(file.toPath()).build()
         val root = loader.createNode()
 
         root.node("discord", "bot-token").set("YOUR_BOT_TOKEN_HERE")
@@ -122,7 +132,6 @@ class ConfigManager(
 
         root.node("features", "chat-sync").set(true)
         root.node("features", "server-messages").set(true)
-        root.node("features", "execute-command-cooldown").set(15000)
 
         root.node("messages", "join").set("**{player}** присоединился к серверу")
         root.node("messages", "leave").set("**{player}** покинул сервер")
@@ -131,16 +140,18 @@ class ConfigManager(
         loader.save(root)
     }
 
-    private fun createDefaultColorsConfig(file: File) {
-        val loader =
-            YamlConfigurationLoader
-                .builder()
-                .path(file.toPath())
-                .build()
+    private fun createDefaultCooldownsConfig(file: File) {
+        val loader = YamlConfigurationLoader.builder().path(file.toPath()).build()
+        val root = loader.createNode()
+        root.node("execute-command-cooldown").set(15000)
+        root.node("global-execute-command-cooldown").set(15000)
+        loader.save(root)
+    }
 
+    private fun createDefaultColorsConfig(file: File) {
+        val loader = YamlConfigurationLoader.builder().path(file.toPath()).build()
         val root = loader.createNode()
         root.node("user-colors").set(mapOf<String, String>())
-
         loader.save(root)
     }
 
@@ -152,17 +163,10 @@ class ConfigManager(
             color
         }
 
-    private fun saveUserColor(
-        userId: String,
-        color: String,
-    ) {
+    private fun saveUserColor(userId: String, color: String) {
         try {
             val colorsFile = File(plugin.dataFolder, "colors.yml")
-            val loader =
-                YamlConfigurationLoader
-                    .builder()
-                    .path(colorsFile.toPath())
-                    .build()
+            val loader = YamlConfigurationLoader.builder().path(colorsFile.toPath()).build()
 
             val root = loader.load()
             root.node("user-colors", userId).set(color)
@@ -174,9 +178,42 @@ class ConfigManager(
 
     fun getMessage(key: String): String = mainConfig.node("messages", key).getString("") ?: ""
 
+    fun isCommandAllowed(command: String): Boolean {
+        val whitelistEmpty = commandWhitelist.isEmpty()
+        val blacklistEmpty = commandBlacklist.isEmpty()
+
+        val commandWords = command.split(Regex("\\s+"))
+
+        return when {
+            whitelistEmpty && blacklistEmpty -> true
+
+            whitelistEmpty && !blacklistEmpty -> {
+                commandWords.none { commandBlacklist.contains(it) }
+            }
+
+            !whitelistEmpty && blacklistEmpty -> {
+                commandWhitelist.contains(command)
+            }
+
+            else -> {
+                commandWhitelist.contains(command) &&
+                commandWords.none { commandBlacklist.contains(it) }
+            }
+        }
+    }
+
+    fun filterChatMessage(message: String): String {
+        var filtered = message
+        wordBlacklist.forEach { word ->
+            if (word.isNotEmpty()) {
+                val regex = Regex("(?i)${Regex.escape(word)}")
+                filtered = regex.replace(filtered) { "*".repeat(it.value.length) }
+            }
+        }
+        return filtered
+    }
+
     fun isValidConfiguration(): Boolean =
         botToken.isNotEmpty() &&
-            guildId.isNotEmpty() &&
-            channelId.isNotEmpty() &&
-            allowedRoleId.isNotEmpty()
+        guildId.isNotEmpty()
 }

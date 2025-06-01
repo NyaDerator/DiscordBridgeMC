@@ -1,0 +1,2 @@
+execute-command-cooldown: 15000
+global-execute-command-cooldown: 15000
