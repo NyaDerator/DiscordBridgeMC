@@ -180,7 +180,7 @@ class DiscordBot(
         if (onlinePlayers.isEmpty()) {
             embed.setDescription("🚫 Нет игроков онлайн")
         } else {
-            val playerList = onlinePlayers.joinToString("\n") { "• ${it.name}" }
+            val playerList = onlinePlayers.joinToString("\n") { "• `${it.name}`" }
             embed.setDescription("**Всего игроков: ${onlinePlayers.size}**\n\n$playerList")
             embed.setFooter("Обновлено", event.jda.selfUser.avatarUrl)
         }
