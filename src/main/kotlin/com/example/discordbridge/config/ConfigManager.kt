@@ -70,10 +70,19 @@ class ConfigManager(
     )
     private var colorIndex = 0
 
+    // Система фильтрации команд
+    private val commandLimitRules = mutableListOf<CommandLimitRule>()
+
+    data class CommandLimitRule(
+        val pattern: String,
+        val limits: Map<Int, IntRange>
+    )
+
     fun loadConfigs() {
         loadMainConfig()
         loadCooldownsConfig()
         loadColorsConfig()
+        parseCommandLimits()
     }
 
     private fun loadMainConfig() {
@@ -133,6 +142,85 @@ class ConfigManager(
         }
     }
 
+    private fun parseCommandLimits() {
+        commandLimitRules.clear()
+        
+        val commandLimitsNode = mainConfig.node("filters", "command_limits")
+        if (commandLimitsNode.virtual() || commandLimitsNode.childrenList().isEmpty()) {
+            return
+        }
+        
+        try {
+            for (limitNode in commandLimitsNode.childrenList()) {
+                val pattern = limitNode.node("pattern").getString("")
+                if (pattern.isNullOrEmpty()) {
+                    plugin.logger.warning("Пропущено правило с пустым паттерном")
+                    continue
+                }
+                
+                val limitsNode = limitNode.node("limits")
+                if (limitsNode.virtual()) {
+                    plugin.logger.warning("Пропущено правило '$pattern' без лимитов")
+                    continue
+                }
+                
+                val limits = mutableMapOf<Int, IntRange>()
+                
+                limitsNode.childrenMap().forEach { (indexKey, valueNode) ->
+                    try {
+                        val index = indexKey.toString().toInt()
+                        val rangeString = valueNode.getString("")
+                        
+                        if (!rangeString.isNullOrEmpty()) {
+                            val range = parseRangeString(rangeString)
+                            if (range != null) {
+                                limits[index] = range
+                            } else {
+                                plugin.logger.warning("Неверный формат диапазона '$rangeString' для позиции $index в паттерне '$pattern'")
+                            }
+                        }
+                    } catch (e: NumberFormatException) {
+                        plugin.logger.warning("Неверный индекс '$indexKey' в паттерне '$pattern'")
+                    }
+                }
+                
+                if (limits.isNotEmpty()) {
+                    commandLimitRules.add(CommandLimitRule(pattern, limits))
+                    plugin.logger.info("Загружено правило: '$pattern' с лимитами: $limits")
+                } else {
+                    plugin.logger.warning("Правило '$pattern' не содержит валидных лимитов")
+                }
+            }
+        } catch (e: Exception) {
+            plugin.logger.severe("Ошибка при разборе правил лимитов команд: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    private fun parseRangeString(rangeString: String): IntRange? {
+        return try {
+            when {
+                rangeString.contains("..") -> {
+                    val parts = rangeString.split("..")
+                    if (parts.size == 2) {
+                        val start = parts[0].trim().toInt()
+                        val end = parts[1].trim().toInt()
+                        start..end
+                    } else {
+                        null
+                    }
+                }
+                rangeString.matches("-?\\d+".toRegex()) -> {
+                    val value = rangeString.toInt()
+                    value..value // Одиночное значение как диапазон
+                }
+                else -> null
+            }
+        } catch (e: NumberFormatException) {
+            null
+        }
+    }
+
     private fun createDefaultConfig(file: File) {
         val loader = YamlConfigurationLoader.builder().path(file.toPath()).build()
         val root = loader.createNode()
@@ -145,6 +233,30 @@ class ConfigManager(
         root.node("features", "chat-sync").set(true)
         root.node("features", "server-messages").set(true)
         root.node("features", "twitch-channel").set("YOUR_TWITCH_CHANNEL_URL_HERE")
+
+        // Создаем пример command_limits в новом формате
+        val commandLimitsNode = root.node("filters", "command_limits")
+        
+        // Правило для tp команды
+        val tpRule = commandLimitsNode.appendListNode()
+        tpRule.node("pattern").set("/tp * * * *")
+        val tpLimits = tpRule.node("limits")
+        tpLimits.node("2").set("-500..500")  // X координата
+        tpLimits.node("3").set("0..320")     // Y координата
+        tpLimits.node("4").set("-500..500")  // Z координата
+        
+        // Правило для effect команды
+        val effectRule = commandLimitsNode.appendListNode()
+        effectRule.node("pattern").set("/effect * * * * *")
+        val effectLimits = effectRule.node("limits")
+        effectLimits.node("4").set("0..120")  // Время действия
+        effectLimits.node("5").set("0..50")   // Уровень эффекта
+        
+        // Правило для give команды
+        val giveRule = commandLimitsNode.appendListNode()
+        giveRule.node("pattern").set("/give * * *")
+        val giveLimits = giveRule.node("limits")
+        giveLimits.node("3").set("1..64")     // Количество предметов
 
         loader.save(root)
     }
@@ -241,6 +353,73 @@ class ConfigManager(
         }
     }
 
+    /**
+     * Проверяет команду на соответствие лимитам
+     * @param command команда для проверки
+     * @return "ok" если команда разрешена, иначе сообщение об ошибке
+     */
+    fun checkCommandLimits(command: String): String {
+        if (commandLimitRules.isEmpty()) {
+            return "ok"
+        }
+        
+        val commandParts = command.trim().split("\\s+".toRegex())
+        
+        for (rule in commandLimitRules) {
+            val patternParts = rule.pattern.split("\\s+".toRegex())
+            
+            if (matchesPattern(commandParts, patternParts)) {
+                val violation = checkLimits(commandParts, rule.limits)
+                if (violation != null) {
+                    return violation
+                }
+            }
+        }
+        
+        return "ok"
+    }
+
+    private fun matchesPattern(command: List<String>, pattern: List<String>): Boolean {
+        if (command.size != pattern.size) return false
+        
+        for (i in command.indices) {
+            if (pattern[i] != "*" && pattern[i] != command[i]) {
+                return false
+            }
+        }
+        
+        return true
+    }
+
+    private fun checkLimits(command: List<String>, limits: Map<Int, IntRange>): String? {
+        for ((index, range) in limits) {
+            if (index >= command.size) continue
+            
+            val arg = command[index]
+            val value = parseNumericArgument(arg)
+            
+            if (value != null && value !in range) {
+                return "Аргумент '$arg' на позиции ${index + 1} превышает допустимый лимит ${range.first}..${range.last}"
+            }
+        }
+        
+        return null
+    }
+
+    private fun parseNumericArgument(arg: String): Int? {
+        return try {
+            when {
+                arg.equals("infinite", ignoreCase = true) -> Int.MAX_VALUE
+                arg.startsWith("~") -> {
+                    val relativeValue = arg.substring(1)
+                    if (relativeValue.isEmpty()) 0 else relativeValue.toInt()
+                }
+                else -> arg.toInt()
+            }
+        } catch (e: NumberFormatException) {
+            null
+        }
+    }
 
     fun filterChatMessage(message: String): String {
         var filtered = message

@@ -216,6 +216,20 @@ class DiscordBot(
             event.replyEmbeds(embed).queue()
             return
         }
+        
+        val checkCommandmsg = config.checkCommandLimits(command)
+        if (checkCommandmsg != "ok") {
+            val embed = EmbedBuilder()
+                .setTitle("❌ Команда запрещена")
+                .setDescription("Ошибка: $checkCommandmsg")
+                .setColor(ERROR_COLOR)
+                .setTimestamp(Instant.now())
+                .build()
+
+            event.replyEmbeds(embed).queue()
+            return
+        }
+
 
         val cooldownManager = plugin.cooldownManager
 
