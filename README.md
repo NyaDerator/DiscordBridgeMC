@@ -74,6 +74,19 @@ filters:
   
   players_blacklist:
     - "запрещенный_игрок"
+
+  command_limits:
+    - pattern: "tp * * * *"
+      limits:
+        2: "-500..500"
+        3: "0..320"
+        4: "-500..500"
+
+    - pattern: "effect * * * * * *"
+      limits:
+        4: "0..120"
+        5: "0..50"
+
 ```
 
 #### `cooldowns.yml`
